@@ -3,11 +3,12 @@ game 'gta5'
 lua54 'yes'
 
 author 'Mobius1'
-description 'Deployable spy cameras for QBCore'
+description 'Deployable spy cameras for ESX (converted by iSentrie)'
 version '0.0.1'
 
 shared_scripts {
-    '@qb-core/shared/locale.lua',
+    '@es_extended/imports.lua',
+	'@es_extended/locale.lua',
     'locales/en.lua',
 }
 
@@ -23,6 +24,6 @@ client_scripts {
 }
 
 dependencies {
-    'qb-core',
+    'es_extended',
     'ox_target',
 }

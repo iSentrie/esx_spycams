@@ -1,4 +1,3 @@
-local QBCore  = exports['qb-core']:GetCoreObject()
 local glm = require("glm")
 
 -- Cache
@@ -29,30 +28,30 @@ local Scaleform = {}
 local Raycast = {}
 
 function Spycam.Add(entity, coords, rotation, onFloor)
-    QBCore.Functions.TriggerCallback('spycams:server:canPlace', function(canPlace)
+    ESX.TriggerCallback('spycams:server:canPlace', function(canPlace)
         if canPlace then
             local ped = PlayerPedId()
             local pcoords = GetEntityCoords(ped)
-        
+
             local animDict = 'weapons@projectile@sticky_bomb'
             local animName = onFloor and 'plant_floor' or 'plant_vertical'
-        
+
             SetEntityCoordsNoOffset(entity, coords.x, coords.y, coords.z)
             SetEntityRotation(entity, rotation.x, rotation.y, rotation.z, 4)
             FreezeEntityPosition(entity, true)
             SetEntityCollision(entity, true, true)
             SetEntityDrawOutline(entity, false)
             SetEntityAlpha(entity, 0)
-        
+
             Streaming.RequestAnimDict(animDict)
-        
+
             if #(coords.xy - pcoords.xy) > 1.0 then
                 TaskGoStraightToCoord(ped, coords, 1.0, 2000, GetEntityHeading(entity), 0.01)
                 repeat Wait(0) until IsEntityAtCoord(ped, coords.x, coords.y, coords.z, 1.0, 1.0, 1.0, 0, 1, 0)
                 ClearPedTasks(ped)
                 Wait(500)
             end
-        
+
             TaskTurnPedToFaceEntity(ped, entity, 500)
             TaskPlayAnim(ped, animDict, animName, 8.0, 8.0, -1, 0, 0, false, false, false)
             Wait(math.floor(GetAnimDuration(animDict, animName)*1000))
@@ -64,15 +63,15 @@ function Spycam.Add(entity, coords, rotation, onFloor)
                     name = 'spycams:retrieve',
                     event = "spycams:client:interact",
                     icon = "fa-solid fa-hand",
-                    label = "Retrieve",        
-                }        
+                    label = "Retrieve",
+                }
             })
 
             local rotation = GetEntityRotation(entity)
             local coords = GetOffsetFromEntityInWorldCoords(entity, 0.0, 0.0, 0.1)
             local rot = { x = rotation.x + 90.0, y = rotation.y + 180.0, z = rotation.z }
             local netId = NetworkGetNetworkIdFromEntity(entity)
-            
+
             ActiveCams[#ActiveCams + 1] = {
                 entity = entity,
                 coords = coords,
@@ -80,7 +79,7 @@ function Spycam.Add(entity, coords, rotation, onFloor)
                 mode = 'normal',
                 startRotation = vec3(rot.x, rot.y, rot.z),
                 currentRotation = { x = rot.x, y = rot.y, z = rot.z },
-                currentZoom = Config.DefaultFOV                
+                currentZoom = Config.DefaultFOV
             }
 
             TriggerServerEvent('spycams:server:placed')
@@ -97,7 +96,7 @@ function Spycam.Remove(entity)
             SetEntityAsMissionEntity(cam.entity, true, true)
             DeleteEntity(cam.entity)
             table.remove(ActiveCams, i)
-            
+
             break
         end
     end
@@ -151,15 +150,15 @@ function Spycam.StartPlacement()
                     norm = glm.normalize(norm)
                     local _, rotation = Raycast.SurfaceNormalToRotation(norm)
                     coords = coords + norm * 0.01
-                    
+
                     local isHorizontal = rotation.y > -20.00 and rotation.y < 20.00
-                    local invalidSurface = Config.MaterialsBlacklist[material] or 
-                    IsEntityAVehicle(entity) or 
-                    (IsEntityAnObject(entity) and not Config.PlaceOnObjects) or 
+                    local invalidSurface = Config.MaterialsBlacklist[material] or
+                    IsEntityAVehicle(entity) or
+                    (IsEntityAnObject(entity) and not Config.PlaceOnObjects) or
                     (isHorizontal and not Config.PlaceOnFloor)
 
 
-        
+
                     local color = { r = 255, g = 255, b = 255, a = 255 }
 
                     if invalidSurface then
@@ -178,12 +177,12 @@ function Spycam.StartPlacement()
 
                     if IsDisabledControlJustPressed(0, keys.place.button) then
                         if invalidSurface then
-                            QBCore.Functions.Notify(Lang:t('error_invalid'), 'error', 7500)
+                            Notify(Lang:t('error_invalid'), 'error', 7500)
                         else
                             placing = false
                             Spycam.Add(currentObject, coords, rotation, isHorizontal)
                         end
-                    end                  
+                    end
                 end
 
                 if IsDisabledControlJustPressed(0, keys.cancel.button) then
@@ -191,7 +190,7 @@ function Spycam.StartPlacement()
                     SetEntityAsMissionEntity(currentObject, true, true)
                     DeleteEntity(currentObject)
                     placing = false
-                end   
+                end
             end
 
             Wait(0)
@@ -207,7 +206,7 @@ function Spycam.Connect()
     local animDict = 'amb@code_human_in_bus_passenger_idles@female@tablet@idle_a'
     local animName = 'idle_a'
     local tabletModel = joaat('prop_cs_tablet')
-    
+
     Streaming.RequestModel(tabletModel)
     Streaming.RequestAnimDict(animDict)
 
@@ -236,10 +235,10 @@ function Spycam.Disconnect()
 end
 
 function Spycam.SelfDestruct(currentIndex, currentCam)
-    QBCore.Functions.Notify(Lang:t('general.destroy', { time = Config.SelfDestructTime }), 'error')
+    Notify(Lang:t('general.destroy', { time = Config.SelfDestructTime }), 'error')
 
     SetTimeout(Config.SelfDestructTime * 1000, function()
-        QBCore.Functions.Notify(Lang:t('general.destroyed'), 'success')
+        Notify(Lang:t('general.destroyed'), 'success')
         TriggerServerEvent('spycams:server:destroyed', currentCam.coords)
 
         Spycam.Remove(currentCam.entity)
@@ -254,13 +253,13 @@ function Camera.Activate()
     if #ActiveCams == 0 then return end
 
     Camera.Deactivate()
-    
+
     if not Spycam.activeIndex then
         Spycam.activeIndex = 1
     end
 
     local currentCam = ActiveCams[Spycam.activeIndex]
-    
+
     Config.OnEnterCam()
 
     Spycam.Cam = CreateCamWithParams("DEFAULT_SCRIPTED_CAMERA", currentCam.coords, currentCam.startRotation, currentCam.currentZoom)
@@ -325,17 +324,17 @@ function Camera.Create(entity)
                     camMoving = true
                     currentCam.currentRotation.x = currentCam.currentRotation.x - Config.MoveStep
                 end
-            
+
                 if IsDisabledControlPressed(0, keys.movedown.button) then
                     camMoving = true
                     currentCam.currentRotation.x = currentCam.currentRotation.x + Config.MoveStep
                 end
-            
+
                 if IsDisabledControlPressed(0, keys.moveleft.button) then
                     camMoving = true
                     currentCam.currentRotation.z = currentCam.currentRotation.z + Config.MoveStep
                 end
-            
+
                 if IsDisabledControlPressed(0, keys.moveright.button) then
                     camMoving = true
                     currentCam.currentRotation.z = currentCam.currentRotation.z - Config.MoveStep
@@ -357,7 +356,7 @@ function Camera.Create(entity)
                     end
 
                     Camera.Activate()
-                end            
+                end
 
                 -- Self-destruct
                 if IsDisabledControlJustPressed(0, keys.destroy.button) then
@@ -394,21 +393,21 @@ function Camera.Create(entity)
                         SetSeethrough(false)
                     end
                 end
-            
+
                 -- Set the camera rotation
                 if camMoving then
                     if currentCam.currentRotation.x >= currentCam.startRotation.x + Config.MaxRotationX then
                         currentCam.currentRotation.x = currentCam.startRotation.x + Config.MaxRotationX
                     end
-                
+
                     if currentCam.currentRotation.x <= currentCam.startRotation.x - Config.MaxRotationX then
                         currentCam.currentRotation.x = currentCam.startRotation.x - Config.MaxRotationX
-                    end     
-                
+                    end
+
                     if currentCam.currentRotation.z >= currentCam.startRotation.z + Config.MaxRotationZ then
                         currentCam.currentRotation.z = currentCam.startRotation.z + Config.MaxRotationZ
                     end
-                
+
                     if currentCam.currentRotation.z <= currentCam.startRotation.z - Config.MaxRotationZ then
                         currentCam.currentRotation.z = currentCam.startRotation.z - Config.MaxRotationZ
                     end
@@ -475,15 +474,15 @@ end
 
 function Raycast.RotationToDirection(rotation)
     local rad = math.pi / 180
-    local adjustedRotation = { 
-        x = rad * rotation.x, 
-        y = rad * rotation.y, 
-        z = rad * rotation.z 
+    local adjustedRotation = {
+        x = rad * rotation.x,
+        y = rad * rotation.y,
+        z = rad * rotation.z
     }
 
     return vec3(
-        -math.sin(adjustedRotation.z) * math.abs(math.cos(adjustedRotation.x)), 
-        math.cos(adjustedRotation.z) * math.abs(math.cos(adjustedRotation.x)), 
+        -math.sin(adjustedRotation.z) * math.abs(math.cos(adjustedRotation.x)),
+        math.cos(adjustedRotation.z) * math.abs(math.cos(adjustedRotation.x)),
         math.sin(adjustedRotation.x)
     )
 end
@@ -526,7 +525,7 @@ function Scaleform.SetInstructionalButtons(data)
 
     PushScaleformMovieFunction(Scaleform.Buttons, "CLEAR_ALL")
     PopScaleformMovieFunctionVoid()
-    
+
     PushScaleformMovieFunction(Scaleform.Buttons, "SET_CLEAR_SPACE")
     PushScaleformMovieFunctionParameterInt(200)
     PopScaleformMovieFunctionVoid()

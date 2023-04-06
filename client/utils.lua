@@ -29,3 +29,7 @@ end
 function orderedPairs(t)
     return orderedNext, t, nil
 end
+
+function Notify(text, theme, timeout)
+    exports.bulletin:Send(text, timeout, nil, nil, theme)
+end
