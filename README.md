@@ -1,4 +1,4 @@
-# ms-spycams
+# esx_spycams
  Deployable spy cameras for ESX
 
 ## Dependencies
