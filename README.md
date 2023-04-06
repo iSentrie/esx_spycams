@@ -1,13 +1,13 @@
 # ms-spycams
- Deployable spy cameras for QBCore
+ Deployable spy cameras for ESX
 
 ## Dependencies
-* [qb-core](https://github.com/qbcore-framework/qb-core)
+* [es_extended](https://github.com/esx-framework/esx_core)
 * [ox_target](https://github.com/overextended/ox_target)
 
 ## Install
 * Drag `ms-spycams` into your `resources` directory
-* Add `ensure ms-spycams` to your  `server.cfg` AFTER `qb-core`
+* Add `ensure ms-spycams` to your  `server.cfg` AFTER `es_extended`
 * The inventory images and items list are in the `INVENTORY` directory
 * Adjust `config/config_client.lua` and `config/config_server.lua` to you liking
 * Restart you server
