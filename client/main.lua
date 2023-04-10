@@ -2,12 +2,9 @@ local glm = require("glm")
 
 -- Cache
 local vec3 = vec3
-local vec4 = vec4
 local quat = quat
 local glm_abs = glm.abs
 local glm_deg = glm.deg
-local glm_dot = glm.dot
-local glm_rad = glm.rad
 local glm_sign = glm.sign
 local glm_approx = glm.approx
 local glm_up = glm.up()
@@ -28,7 +25,7 @@ local Scaleform = {}
 local Raycast = {}
 
 function Spycam.Add(entity, coords, rotation, onFloor)
-    ESX.TriggerCallback('spycams:server:canPlace', function(canPlace)
+    ESX.TriggerServerCallback('spycams:server:canPlace', function(canPlace)
         if canPlace then
             local ped = PlayerPedId()
             local pcoords = GetEntityCoords(ped)
@@ -40,8 +37,11 @@ function Spycam.Add(entity, coords, rotation, onFloor)
             SetEntityRotation(entity, rotation.x, rotation.y, rotation.z, 4)
             FreezeEntityPosition(entity, true)
             SetEntityCollision(entity, true, true)
-            SetEntityDrawOutline(entity, false)
             SetEntityAlpha(entity, 0)
+
+            if Config.DrawOutline then
+                SetEntityDrawOutline(entity, false)
+            end
 
             Streaming.RequestAnimDict(animDict)
 
@@ -124,9 +124,12 @@ function Spycam.StartPlacement()
 
         Streaming.RequestModel(modelHash)
         currentObject = CreateObject(modelHash, GetEntityCoords(player), true, true, true)
-        SetEntityDrawOutline(currentObject, true)
-        SetEntityDrawOutlineShader(1)
         SetEntityCollision(currentObject, false, false)
+
+        if Config.DrawOutline then
+            SetEntityDrawOutline(currentObject, true)
+            SetEntityDrawOutlineShader(1)
+        end
 
         placing = true
 
@@ -157,21 +160,16 @@ function Spycam.StartPlacement()
                     (IsEntityAnObject(entity) and not Config.PlaceOnObjects) or
                     (isHorizontal and not Config.PlaceOnFloor)
 
-
-
-                    local color = { r = 255, g = 255, b = 255, a = 255 }
-
-                    if invalidSurface then
-                        color.g = 0
-                        color.b = 0
-                    end
-
                     -- Limit height
                     if coords.z > pcoords.z + Config.MaxPlaceHeight then
                         coords = vec3(coords.x, coords.y, pcoords.z + Config.MaxPlaceHeight)
                     end
 
-                    SetEntityDrawOutlineColor(color.r, color.g, color.b, color.a)
+                    if Config.DrawOutline then
+                        local color = { r = 255, g = invalidSurface and 0 or 255, b = invalidSurface and 0 or 255, a = 255 }
+                        SetEntityDrawOutlineColor(color.r, color.g, color.b, color.a)
+                    end
+
                     SetEntityCoordsNoOffset(currentObject, coords.x, coords.y, coords.z)
                     SetEntityRotation(currentObject, rotation.x, rotation.y, rotation.z, 4)
 
@@ -221,8 +219,6 @@ function Spycam.Connect()
 end
 
 function Spycam.Disconnect()
-    if not Spycam.Cam then return end
-
     Camera.Destroy()
 
     if Spycam.Tablet then
@@ -235,24 +231,42 @@ function Spycam.Disconnect()
 end
 
 function Spycam.SelfDestruct(currentIndex, currentCam)
+    if not currentCam.inRange then
+        return Notify(Lang:t('errors.range'), 'error')
+    end
+
     Notify(Lang:t('general.destroy', { time = Config.SelfDestructTime }), 'error')
 
     SetTimeout(Config.SelfDestructTime * 1000, function()
+        currentCam.destroyed = true
+
         Notify(Lang:t('general.destroyed'), 'success')
         TriggerServerEvent('spycams:server:destroyed', currentCam.coords)
-
-        Spycam.Remove(currentCam.entity)
         TriggerServerEvent('spycams:server:removed', true)
 
-        Spycam.Disconnect()
-        Spycam.activeIndex = 1
+        if currentIndex == Spycam.activeIndex then
+            SetTimecycleModifier("CAMERA_secuirity_FUZZ")
+            SetTimecycleModifierStrength(1.0)
+            SetExtraTimecycleModifier("NG_blackout")
+            SetExtraTimecycleModifierStrength(1.0)
+        end
+
+        Wait(3000)
+
+        Spycam.Remove(currentCam.entity)
+
+        if #ActiveCams == 0 then
+            Spycam.Disconnect()
+            Spycam.activeIndex = 1
+        else
+            Spycam.activeIndex = 1
+            Camera.Activate()
+        end
     end)
 end
 
 function Camera.Activate()
     if #ActiveCams == 0 then return end
-
-    Camera.Deactivate()
 
     if not Spycam.activeIndex then
         Spycam.activeIndex = 1
@@ -262,13 +276,19 @@ function Camera.Activate()
 
     Config.OnEnterCam()
 
-    Spycam.Cam = CreateCamWithParams("DEFAULT_SCRIPTED_CAMERA", currentCam.coords, currentCam.startRotation, currentCam.currentZoom)
+    if not Spycam.Cam then
+        Spycam.Cam = CreateCamWithParams("DEFAULT_SCRIPTED_CAMERA", currentCam.coords, currentCam.startRotation, currentCam.currentZoom)
+    end
+
     ClearFocus()
     SetCamActive(Spycam.Cam, true)
     RenderScriptCams(true, false, 0, true, false)
     SetCamAffectsAiming(Spycam.Cam, false)
 
-    -- Set initial rotation
+    -- Set camera position
+    SetCamCoord(Spycam.Cam, currentCam.coords)
+
+    -- Set camera rotation
     -- We can do this with the last two params of CreateCamWithParams, but they're undocumented so we'll do it here for now
     SetCamRot(Spycam.Cam, currentCam.currentRotation.x, currentCam.currentRotation.y, currentCam.currentRotation.z, 2)
 
@@ -285,59 +305,47 @@ function Camera.Activate()
         SetNightvision(false)
         SetSeethrough(true)
     end
-end
 
-function Camera.Deactivate()
-    if Spycam.Cam then
-        SetSeethrough(false)
-        SetNightvision(false)
-        ClearFocus()
-        RenderScriptCams(false, false, 0, true, false)
-        DestroyCam(Spycam.Cam, true)
+    local player = PlayerPedId()
+    local pcoords = GetEntityCoords(player)
+    local dist = #(currentCam.coords - pcoords)
+
+    ClearTimecycleModifier()
+    ClearExtraTimecycleModifier()
+
+    if dist > Config.SignalDistance or currentCam.destroyed then
+        currentCam.inRange = false
+        SetTimecycleModifier("CAMERA_secuirity_FUZZ")
+        SetTimecycleModifierStrength(1.0)
+        SetExtraTimecycleModifier("NG_blackout")
+        SetExtraTimecycleModifierStrength(1.0)
+    else
+        currentCam.inRange = true
+        SetTimecycleModifier(Config.ScreenEffect)
+        SetTimecycleModifierStrength(Config.EffectStrength)
     end
 end
 
-function Camera.Create(entity)
-    Camera.Activate()
-
-    ClearTimecycleModifier()
-    SetTimecycleModifier(Config.ScreenEffect)
-
+function Camera.Create()
     local keys = Config.Controls.camera
     local buttons = Scaleform.SetInstructionalButtons(keys)
+    local player = PlayerPedId()
 
     CreateThread(function()
+        Camera.Activate()
+
         while Spycam.Cam do
             local currentCam = ActiveCams[Spycam.activeIndex]
 
             if currentCam then
-
                 -- Stop player moving
                 DisableAllControlActions(0)
 
                 -- Display instructional buttons
                 DrawScaleformMovieFullscreen(buttons, 255, 255, 255, 255, 0)
 
-                -- Camera movement controls
-                local camMoving = false
-                if IsDisabledControlPressed(0, keys.moveup.button) then
-                    camMoving = true
-                    currentCam.currentRotation.x = currentCam.currentRotation.x - Config.MoveStep
-                end
-
-                if IsDisabledControlPressed(0, keys.movedown.button) then
-                    camMoving = true
-                    currentCam.currentRotation.x = currentCam.currentRotation.x + Config.MoveStep
-                end
-
-                if IsDisabledControlPressed(0, keys.moveleft.button) then
-                    camMoving = true
-                    currentCam.currentRotation.z = currentCam.currentRotation.z + Config.MoveStep
-                end
-
-                if IsDisabledControlPressed(0, keys.moveright.button) then
-                    camMoving = true
-                    currentCam.currentRotation.z = currentCam.currentRotation.z - Config.MoveStep
+                if not currentCam.inRange then
+                    DrawMessage(0.5, 0.5, 0.8, 255, 255, 255, 255, Lang:t('general.nosignal'))
                 end
 
                 if IsDisabledControlJustPressed(0, 174) then
@@ -358,61 +366,85 @@ function Camera.Create(entity)
                     Camera.Activate()
                 end
 
-                -- Self-destruct
-                if IsDisabledControlJustPressed(0, keys.destroy.button) then
-                    Spycam.SelfDestruct(Spycam.activeIndex, currentCam)
-                end
-
                 -- Exit the camera view
                 if IsDisabledControlJustPressed(0, keys.disconnect.button) then
                     Spycam.Disconnect()
                 end
 
-                -- Camera zoom controls
-                if IsDisabledControlJustPressed(0, keys.zoomin.button) then
-                    currentCam.currentZoom = currentCam.currentZoom - Config.ZoomStep
-                    currentCam.currentZoom = math.max(currentCam.currentZoom, Config.MinFOV)
-                    SetCamFov(Spycam.Cam, currentCam.currentZoom)
-                elseif IsDisabledControlJustPressed(0, keys.zoomout.button) then
-                    currentCam.currentZoom = currentCam.currentZoom + Config.ZoomStep
-                    currentCam.currentZoom = math.min(currentCam.currentZoom, Config.MaxFOV)
-                    SetCamFov(Spycam.Cam, currentCam.currentZoom)
+                -- Self-destruct
+                if IsDisabledControlJustPressed(0, keys.destroy.button) then
+                    Spycam.SelfDestruct(Spycam.activeIndex, currentCam)
                 end
 
-                -- Camera vision mode controls
-                if IsDisabledControlJustPressed(0, keys.mode.button) then
-                    if currentCam.mode == 'normal' then
-                        currentCam.mode = 'night'
-                        SetNightvision(true)
-                    elseif currentCam.mode == 'night' then
-                        currentCam.mode = 'thermal'
-                        SetNightvision(false)
-                        SetSeethrough(true)
-                    elseif currentCam.mode == 'thermal' then
-                        currentCam.mode = 'normal'
-                        SetSeethrough(false)
-                    end
-                end
-
-                -- Set the camera rotation
-                if camMoving then
-                    if currentCam.currentRotation.x >= currentCam.startRotation.x + Config.MaxRotationX then
-                        currentCam.currentRotation.x = currentCam.startRotation.x + Config.MaxRotationX
+                if currentCam.inRange then
+                    -- Camera movement controls
+                    local camMoving = false
+                    if IsDisabledControlPressed(0, keys.moveup.button) then
+                        camMoving = true
+                        currentCam.currentRotation.x = currentCam.currentRotation.x - Config.MoveStep
                     end
 
-                    if currentCam.currentRotation.x <= currentCam.startRotation.x - Config.MaxRotationX then
-                        currentCam.currentRotation.x = currentCam.startRotation.x - Config.MaxRotationX
+                    if IsDisabledControlPressed(0, keys.movedown.button) then
+                        camMoving = true
+                        currentCam.currentRotation.x = currentCam.currentRotation.x + Config.MoveStep
                     end
 
-                    if currentCam.currentRotation.z >= currentCam.startRotation.z + Config.MaxRotationZ then
-                        currentCam.currentRotation.z = currentCam.startRotation.z + Config.MaxRotationZ
+                    if IsDisabledControlPressed(0, keys.moveleft.button) then
+                        camMoving = true
+                        currentCam.currentRotation.z = currentCam.currentRotation.z + Config.MoveStep
                     end
 
-                    if currentCam.currentRotation.z <= currentCam.startRotation.z - Config.MaxRotationZ then
-                        currentCam.currentRotation.z = currentCam.startRotation.z - Config.MaxRotationZ
+                    if IsDisabledControlPressed(0, keys.moveright.button) then
+                        camMoving = true
+                        currentCam.currentRotation.z = currentCam.currentRotation.z - Config.MoveStep
                     end
 
-                    SetCamRot(Spycam.Cam, currentCam.currentRotation.x, currentCam.currentRotation.y, currentCam.currentRotation.z, 2)
+                    -- Camera zoom controls
+                    if IsDisabledControlJustPressed(0, keys.zoomin.button) then
+                        currentCam.currentZoom = currentCam.currentZoom - Config.ZoomStep
+                        currentCam.currentZoom = math.max(currentCam.currentZoom, Config.MinFOV)
+                        SetCamFov(Spycam.Cam, currentCam.currentZoom)
+                    elseif IsDisabledControlJustPressed(0, keys.zoomout.button) then
+                        currentCam.currentZoom = currentCam.currentZoom + Config.ZoomStep
+                        currentCam.currentZoom = math.min(currentCam.currentZoom, Config.MaxFOV)
+                        SetCamFov(Spycam.Cam, currentCam.currentZoom)
+                    end
+
+                    -- Camera vision mode controls
+                    if IsDisabledControlJustPressed(0, keys.mode.button) then
+                        if currentCam.mode == 'normal' then
+                            currentCam.mode = 'night'
+                            SetNightvision(true)
+                        elseif currentCam.mode == 'night' then
+                            currentCam.mode = 'thermal'
+                            SetNightvision(false)
+                            SetSeethrough(true)
+                        elseif currentCam.mode == 'thermal' then
+                            currentCam.mode = 'normal'
+                            SetSeethrough(false)
+                        end
+                    end
+
+                    -- Set the camera rotation
+                    if camMoving then
+                        if currentCam.currentRotation.x >= currentCam.startRotation.x + Config.MaxRotationX then
+                            currentCam.currentRotation.x = currentCam.startRotation.x + Config.MaxRotationX
+                        end
+
+                        if currentCam.currentRotation.x <= currentCam.startRotation.x - Config.MaxRotationX then
+                            currentCam.currentRotation.x = currentCam.startRotation.x - Config.MaxRotationX
+                        end
+
+                        if currentCam.currentRotation.z >= currentCam.startRotation.z + Config.MaxRotationZ then
+                            currentCam.currentRotation.z = currentCam.startRotation.z + Config.MaxRotationZ
+                        end
+
+                        if currentCam.currentRotation.z <= currentCam.startRotation.z - Config.MaxRotationZ then
+                            currentCam.currentRotation.z = currentCam.startRotation.z - Config.MaxRotationZ
+                        end
+
+                        SetCamRot(Spycam.Cam, currentCam.currentRotation.x, currentCam.currentRotation.y, currentCam.currentRotation.z, 2)
+                    end
                 end
             end
 
@@ -422,16 +454,18 @@ function Camera.Create(entity)
 end
 
 function Camera.Destroy()
-    if not Spycam.Cam then return end
-
     Config.OnExitCam()
     ClearFocus()
     RenderScriptCams(false, false, 0, true, false)
-    DestroyCam(Spycam.Cam, true)
+
+    if Spycam.Cam then
+        DestroyCam(Spycam.Cam, true)
+        Spycam.Cam = nil
+    end
     SetSeethrough(false)
     SetNightvision(false)
     ClearTimecycleModifier()
-    Spycam.Cam = nil
+    ClearExtraTimecycleModifier()
 end
 
 --- Source: https://github.com/citizenfx/lua/blob/luaglm-dev/cfx/libs/scripts/examples/scripting_gta.lua
@@ -487,6 +521,9 @@ function Raycast.RotationToDirection(rotation)
     )
 end
 
+
+-- STREAMING
+
 function Streaming.RequestAnimDict(dict)
     if HasAnimDictLoaded(dict) then return end
     RequestAnimDict(dict)
@@ -511,6 +548,8 @@ function Streaming.RequestPtfx(ptfx)
     end
 end
 
+
+-- SCALEFORM
 
 function Scaleform.SetInstructionalButtons(data)
     if Scaleform.Buttons then
@@ -564,12 +603,23 @@ function Scaleform.SetButtonMessage(text)
     EndTextCommandScaleformString()
 end
 
+
+-- EVENT HANDLERS
+
+RegisterNetEvent('esx:playerLoaded', function()
+    TriggerEvent('chat:addSuggestion', '/spycams:connect', 'Connect to deployed spy cameras', {})
+end)
+
 RegisterNetEvent('spycams:client:place', function()
     Spycam.StartPlacement()
 end)
 
 RegisterNetEvent('spycams:client:connect', function()
     Spycam.Connect()
+end)
+
+RegisterNetEvent('spycams:client:diconnect', function()
+    Spycam.Disconnect()
 end)
 
 RegisterNetEvent('spycams:client:destroyed', function(coords)
@@ -590,3 +640,26 @@ AddEventHandler('onResourceStop', function(res)
     if res ~= GetCurrentResourceName() then return end
     Spycam.Disconnect()
 end)
+
+
+-- COMMANDS
+
+RegisterCommand('spycams:connect', function()
+    Spycam.Connect()
+end)
+
+RegisterCommand('spycams:disconnect', function()
+    Spycam.Disconnect()
+end)
+
+
+-- EXPORTS
+
+exports('Connect', function()
+    return Spycam.Connect()
+end)
+
+exports('Disconnect', function()
+    return Spycam.Disconnect()
+end)
+
