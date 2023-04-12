@@ -8,8 +8,8 @@
 
 
 ## Install
-* Drag `ms-spycams` into your `resources` directory
-* Add `ensure ms-spycams` to your  `server.cfg` AFTER `es_extended`
+* Drag `esx_spycams` into your `resources` directory
+* Add `ensure esx_spycams` to your  `server.cfg` AFTER `es_extended`
 * The inventory images and items list are in the `INVENTORY` directory
 * Adjust `config/config_client.lua` and `config/config_server.lua` to you liking
 * Restart you server
@@ -22,8 +22,8 @@
 
 If you don't want to utilise the `spycam_tablet` item to connect to the deployed spy cameras, you can either use the command `spycams:connect` or utilise the following exports from your scripts:
 
-* `exports['ms-spycams']:Connect()` - Connects to deployed spy cameras
-* `exports['ms-spycams']:Disconnect()` - Disconnects from deployed spy cameras
+* `exports['esx_spycams']:Connect()` - Connects to deployed spy cameras
+* `exports['esx_spycams']:Disconnect()` - Disconnects from deployed spy cameras
 
 
 ## Contributing
